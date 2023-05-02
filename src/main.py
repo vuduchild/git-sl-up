@@ -12,7 +12,7 @@ class LogLineElement(NamedTuple):
 
 
 class Colors(Enum):
-    WHITE = 1
+    WHITE = 0
     MAGENTA = 2
     YELLOW = 3
     GREEN = 4
