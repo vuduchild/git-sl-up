@@ -1,14 +1,38 @@
 import curses
+from enum import Enum
 import os
 import re
 import subprocess
 from typing import NamedTuple
-from xml.etree import ElementTree
 
 
 class LogLineElement(NamedTuple):
     text: str
     coordinates: tuple[int, int]
+
+
+class Colors(Enum):
+    WHITE = 1
+    MAGENTA = 2
+    YELLOW = 3
+    GREEN = 4
+
+
+def initialize_curses() -> None:
+    # Hide the cursor
+    curses.curs_set(0)
+
+    # Define color pairs for highlighting the current line
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_WHITE, -1)
+    curses.init_pair(2, curses.COLOR_MAGENTA, -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
+    curses.init_pair(4, curses.COLOR_GREEN, -1)
+
+
+def get_smartlog() -> list[str]:
+    lines = subprocess.check_output(["git", "smartlog"]).decode().split("\n")
+    return [remove_colors(line) for line in lines if line != ""]
 
 
 def remove_colors(string: str) -> str:
@@ -33,35 +57,6 @@ def remove_graphical_elements(string: str) -> str:
     return matcher.sub("", string)
 
 
-def get_smartlog() -> list[str]:
-    lines = subprocess.check_output(["git", "smartlog"]).decode().split("\n")
-    return [remove_colors(line) for line in lines if line != ""]
-
-
-def git_checkout(ref: str) -> None:
-    subprocess.check_call(["git", "checkout", ref])
-
-
-def draw_menu(window: curses.window, current_line: int, smartlog: list[str]) -> None:
-    window.clear()
-    # Define color pairs for highlighting the current line
-    curses.init_pair(1, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
-    curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLACK)
-    insert_row_index = 1
-    # Draw the branch menu
-    for i, log_line in enumerate(smartlog):
-        insert_line_index = i + 1  # Pad the top of the menu by 1 line
-        if i == current_line:
-            window.attron(curses.color_pair(1))
-            window.addstr(insert_line_index, insert_row_index, log_line)
-            window.attroff(curses.color_pair(1))
-        else:
-            window.attron(curses.color_pair(2))
-            window.addstr(insert_line_index, insert_row_index, log_line)
-            window.attroff(curses.color_pair(2))
-    window.refresh()
-
-
 def get_elements_from_log_line(
     log_line: str,
 ) -> dict[str, LogLineElement]:
@@ -79,6 +74,66 @@ def get_elements_from_log_line(
                     coordinates=matches.span(key),
                 )
     return retval
+
+
+def git_checkout(ref: str) -> None:
+    subprocess.check_call(["git", "checkout", ref])
+
+
+def format_line(
+    log_line: str,
+    window: curses.window,
+    insert_line_index: int,
+    is_current_line: bool = False,
+) -> None:
+    insert_row_index = 1
+    if is_current_line:
+        color_screen_text(
+            log_line, window, insert_line_index, insert_row_index, Colors.MAGENTA
+        )
+    else:
+        # first colorize the whole thing white
+        color_screen_text(log_line, window, insert_line_index, insert_row_index)
+
+        # colorize specific elements
+        elements = get_elements_from_log_line(log_line)
+        if elements.get("commit"):
+            color_screen_text(
+                elements["commit"].text,
+                window,
+                insert_line_index,
+                elements["commit"].coordinates[0] + 1,
+                Colors.YELLOW,
+            )
+        if elements.get("branches"):
+            color_screen_text(
+                f"({elements['branches'].text})",
+                window,
+                insert_line_index,
+                elements["branches"].coordinates[0],
+                Colors.GREEN,
+            )
+
+
+def color_screen_text(
+    text: str,
+    window: curses.window,
+    insert_line_index: int,
+    insert_row_index: int = 1,
+    color: Colors = Colors.WHITE,
+) -> None:
+    window.attron(curses.color_pair(color.value))
+    window.addstr(insert_line_index, insert_row_index, text)
+    window.attroff(curses.color_pair(color.value))
+
+
+def draw_menu(window: curses.window, current_line: int, smartlog: list[str]) -> None:
+    window.clear()
+
+    # Draw the branch menu
+    for i, log_line in enumerate(smartlog):
+        format_line(log_line, window, i + 1, i == current_line)
+    window.refresh()
 
 
 def get_commit_or_branch_name(log_line: str) -> str:
@@ -103,8 +158,7 @@ def get_commit_lines_indices(lines: list[str]) -> list[int]:
 
 
 def main(window: curses.window) -> None:
-    # Hide the cursor
-    curses.curs_set(0)
+    initialize_curses()
     # Get the list of Git branches
     smartlog = get_smartlog()
 
