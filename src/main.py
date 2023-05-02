@@ -94,30 +94,35 @@ def main(window: curses.window) -> None:
 
     # These are the only lines we want to interact with
     commit_lines_indices = get_commit_lines_indices(smartlog)
-    current_row = commit_lines_indices.index(
+    current_checkout = commit_lines_indices.index(
         smartlog.index([line for line in smartlog if is_current_checkout(line)][0])
     )
+    # start the at the current checkout
+    current_line = current_checkout
     # Draw the initial menu
-    draw_menu(window, commit_lines_indices[current_row], smartlog)
+    draw_menu(window, commit_lines_indices[current_line], smartlog)
     while True:
         try:
             # Listen for user input
             key = window.getch()
-            if key == curses.KEY_UP and current_row > 0:
-                current_row -= 1
-            elif key == curses.KEY_DOWN and current_row < len(commit_lines_indices) - 1:
-                current_row += 1
+            if key == curses.KEY_UP and current_line > 0:
+                current_line -= 1
+            elif (
+                key == curses.KEY_DOWN and current_line < len(commit_lines_indices) - 1
+            ):
+                current_line += 1
             elif key in [curses.KEY_ENTER, 10, 13]:
                 # Switch to the selected branch
                 ref = get_commit_or_branch_name(
-                    smartlog[commit_lines_indices[current_row]]
+                    smartlog[commit_lines_indices[current_line]]
                 )
-                git_checkout(ref)
+                if current_checkout != current_line:
+                    git_checkout(ref)
                 break
             elif key == 27:  # Escape key
                 break
             # Redraw the menu with the new selection
-            draw_menu(window, commit_lines_indices[current_row], smartlog)
+            draw_menu(window, commit_lines_indices[current_line], smartlog)
         except KeyboardInterrupt:
             break
 
