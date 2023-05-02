@@ -16,6 +16,11 @@ def is_commit_line(string: str) -> bool:
     return matcher.match(string) is not None
 
 
+def is_current_checkout(string: str) -> bool:
+    matcher = re.compile(r"^[\|\:\s]*\*")
+    return matcher.match(string) is not None
+
+
 def remove_graphical_elements(string: str) -> str:
     matcher = re.compile(r"^[\|\:\s]*[o\*]\s*")
     return matcher.sub("", string)
@@ -86,9 +91,12 @@ def main(window: curses.window) -> None:
     curses.curs_set(0)
     # Get the list of Git branches
     smartlog = get_smartlog()
-    current_row = 0
+
     # These are the only lines we want to interact with
     commit_lines_indices = get_commit_lines_indices(smartlog)
+    current_row = commit_lines_indices.index(
+        smartlog.index([line for line in smartlog if is_current_checkout(line)][0])
+    )
     # Draw the initial menu
     draw_menu(window, commit_lines_indices[current_row], smartlog)
     while True:
