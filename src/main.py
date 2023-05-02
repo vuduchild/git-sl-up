@@ -2,6 +2,13 @@ import curses
 import os
 import re
 import subprocess
+from typing import NamedTuple
+from xml.etree import ElementTree
+
+
+class LogLineElement(NamedTuple):
+    text: str
+    coordinates: tuple[int, int]
 
 
 def remove_colors(string: str) -> str:
@@ -35,51 +42,60 @@ def git_checkout(ref: str) -> None:
     subprocess.check_call(["git", "checkout", ref])
 
 
-def draw_menu(window: curses.window, current_row: int, smartlog: list[str]) -> None:
+def draw_menu(window: curses.window, current_line: int, smartlog: list[str]) -> None:
     window.clear()
-    # Define color pairs for highlighting the current row
-    curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
+    # Define color pairs for highlighting the current line
+    curses.init_pair(1, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
     curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    insert_row_index = 1
     # Draw the branch menu
-    for i, branch in enumerate(smartlog):
-        x = 2
-        y = i + 2
-        if i == current_row:
+    for i, log_line in enumerate(smartlog):
+        insert_line_index = i + 1  # Pad the top of the menu by 1 line
+        if i == current_line:
             window.attron(curses.color_pair(1))
-            window.addstr(y, x, f" {branch} ", curses.A_REVERSE)
+            window.addstr(insert_line_index, insert_row_index, log_line)
             window.attroff(curses.color_pair(1))
         else:
             window.attron(curses.color_pair(2))
-            window.addstr(y, x, f" {branch} ")
+            window.addstr(insert_line_index, insert_row_index, log_line)
             window.attroff(curses.color_pair(2))
     window.refresh()
 
 
-def get_commit_or_branch_name(log_row: str) -> str:
-    log_row = remove_colors(log_row).strip()
-    log_row = remove_graphical_elements(log_row)
-    parts_without_commit_and_author = [
-        part for part in log_row.split(" ") if part != ""
-    ][2:]
-    if parts_without_commit_and_author[0].startswith("("):
-        branches: list[str] = []
-        index = 0
-        while True:
-            part = parts_without_commit_and_author[index].rstrip(",")
-            if part.startswith("("):
-                branches.append(part.lstrip("("))
-            elif part.endswith(")"):
-                branches.append(part.rstrip(")"))
-                break
-            else:
-                branches.append(part)
-            index += 1
+def get_elements_from_log_line(
+    log_line: str,
+) -> dict[str, LogLineElement]:
+    retval: dict[str, LogLineElement] = {}
+    matcher = re.compile(
+        r"^[\|\:\s]*[o\*]\s*(?P<commit>[^\s]+)\s*(?P<author>[^\s]+)\s*(?:\((?P<branches>.*)\)\s*)?(?P<time>.*)$"
+    )
+    matches = matcher.search(log_line)
+    if matches:
+        group_dict = matches.groupdict()
+        for key in group_dict.keys():
+            if group_dict[key]:
+                retval[key] = LogLineElement(
+                    text=group_dict[key],
+                    coordinates=matches.span(key),
+                )
+    return retval
+
+
+def get_commit_or_branch_name(log_line: str) -> str:
+    log_line = remove_colors(log_line).strip()
+
+    elements = get_elements_from_log_line(log_line)
+
+    if elements.get("branches"):
+        branches = elements["branches"].text.split(",")
+        branches = [branch.strip() for branch in branches]
         local_branches = [b for b in branches if not b.startswith("origin/")]
-        print(local_branches)
         return local_branches[0] if local_branches else branches[0]
 
-    # return commit hash
-    return log_row.split(" ")[0]
+    if elements.get("commit"):
+        return elements["commit"].text
+
+    raise ValueError("Could not find commit or branch name in log line")
 
 
 def get_commit_lines_indices(lines: list[str]) -> list[int]:
