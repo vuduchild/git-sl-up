@@ -11,9 +11,13 @@ def remove_colors(string: str) -> str:
     return ansi_escape.sub("", string)
 
 
+def is_commit_line(string: str) -> bool:
+    matcher = re.compile(r"^[\|\:\s]*[o\*]")
+    return matcher.match(string) is not None
+
+
 def remove_graphical_elements(string: str) -> str:
     matcher = re.compile(r"^[\|\:\s]*[o\*]\s*")
-    # matcher = re.compile(r"^\s*(o|\*)")
     return matcher.sub("", string)
 
 
@@ -47,7 +51,8 @@ def draw_menu(window: curses.window, current_row: int, smartlog: list[str]) -> N
 
 
 def get_commit_or_branch_name(log_row: str) -> str:
-    log_row = remove_graphical_elements(log_row).strip()
+    log_row = remove_colors(log_row).strip()
+    log_row = remove_graphical_elements(log_row)
     parts_without_commit_and_author = [
         part for part in log_row.split(" ") if part != ""
     ][2:]
@@ -72,31 +77,39 @@ def get_commit_or_branch_name(log_row: str) -> str:
     return log_row.split(" ")[0]
 
 
+def get_commit_lines_indices(lines: list[str]) -> list[int]:
+    return [i for i in range(len(lines)) if is_commit_line(lines[i])]
+
+
 def main(window: curses.window) -> None:
     # Hide the cursor
     curses.curs_set(0)
     # Get the list of Git branches
     smartlog = get_smartlog()
     current_row = 0
+    # These are the only lines we want to interact with
+    commit_lines_indices = get_commit_lines_indices(smartlog)
     # Draw the initial menu
-    draw_menu(window, current_row, smartlog)
+    draw_menu(window, commit_lines_indices[current_row], smartlog)
     while True:
         try:
             # Listen for user input
             key = window.getch()
             if key == curses.KEY_UP and current_row > 0:
                 current_row -= 1
-            elif key == curses.KEY_DOWN and current_row < len(smartlog) - 1:
+            elif key == curses.KEY_DOWN and current_row < len(commit_lines_indices) - 1:
                 current_row += 1
             elif key in [curses.KEY_ENTER, 10, 13]:
                 # Switch to the selected branch
-                ref = get_commit_or_branch_name(smartlog[current_row])
+                ref = get_commit_or_branch_name(
+                    smartlog[commit_lines_indices[current_row]]
+                )
                 git_checkout(ref)
                 break
             elif key == 27:  # Escape key
                 break
             # Redraw the menu with the new selection
-            draw_menu(window, current_row, smartlog)
+            draw_menu(window, commit_lines_indices[current_row], smartlog)
         except KeyboardInterrupt:
             break
 
